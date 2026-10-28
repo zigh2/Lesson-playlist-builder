@@ -1,0 +1,82 @@
+name: Extract uploaded ZIP and replace project
+
+# ارفع ملف .zip في جذر المستودع (Add file > Upload files) وسيُستخرج ويستبدل المشروع تلقائياً.
+on:
+  push:
+    branches: [main]
+    paths: ['*.zip']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: extract-zip
+  cancel-in-progress: false
+
+jobs:
+  replace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract ZIP and replace project files
+        id: extract
+        run: |
+          set -euo pipefail
+          git config core.quotepath false
+          shopt -s nullglob
+          zips=(./*.zip)
+          if [ ${#zips[@]} -eq 0 ]; then
+            echo "No zip in repo root; nothing to do."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # أحدث ملف zip (حسب الاسم) إن وُجد أكثر من واحد
+          zip_file=$(printf '%s\n' "${zips[@]}" | sort | tail -n 1)
+          echo "Using: $zip_file"
+
+          tmp=$(mktemp -d)
+          unzip -q -o "$zip_file" -d "$tmp"
+          rm -rf "$tmp/__MACOSX" "$tmp/.git" "$tmp/.github"
+
+          # إن كان كل المحتوى داخل مجلد واحد، ندخل إليه (يمنع مجلد داخل مجلد)
+          src="$tmp"
+          while [ "$(find "$src" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1 ] \
+                && [ -d "$(find "$src" -mindepth 1 -maxdepth 1)" ]; do
+            src=$(find "$src" -mindepth 1 -maxdepth 1)
+          done
+
+          # حذف المشروع القديم (عدا .git و .github وملفات zip)
+          find . -mindepth 1 -maxdepth 1 \
+            ! -name '.git' ! -name '.github' ! -name '*.zip' \
+            -exec rm -rf {} +
+
+          # نسخ المشروع الجديد (بما فيه الملفات المخفية)
+          cp -a "$src"/. .
+          rm -f ./*.zip
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "zip_name=$(basename "$zip_file")" >> "$GITHUB_OUTPUT"
+
+      - name: Commit, tag and push
+        if: steps.extract.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes."
+            exit 0
+          fi
+          version=$(grep -h -oP '^APP_VERSION\s*=\s*"\K[^"]+' main.py 2>/dev/null || true)
+          msg="Update project from ${{ steps.extract.outputs.zip_name }}"
+          [ -n "$version" ] && msg="$msg (v$version)"
+          git commit -m "$msg"
+          git push
+          if [ -n "$version" ] && ! git rev-parse "v$version" >/dev/null 2>&1; then
+            git tag -a "v$version" -m "Release v$version"
+            git push origin "v$version"
+          fi
