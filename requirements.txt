@@ -1,0 +1,3 @@
+PySide6>=6.6
+mutagen>=1.47
+openpyxl>=3.1

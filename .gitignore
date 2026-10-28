@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# بيانات المستخدم المحلية (نتائج الفحص والمشاريع المصدّرة والجداول المخرَّجة)
+intro_scan.json
+series_scan.json
+fasil_scan.json
+مشروع_كامل.json
+autosave_session.json
+جدول_التخريج.xlsx
